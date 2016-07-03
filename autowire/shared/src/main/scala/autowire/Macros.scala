@@ -62,6 +62,20 @@ object Macros {
       }
     }
 
+    def doSubst(curCls : c.universe.Type, t : Type): Type = {
+      curCls match {
+        case TypeRef(_,sym,tpeArgs) => {
+          t.substituteTypes(sym.asType.typeParams, tpeArgs)
+        }
+        case NullaryMethodType(TypeRef(pre, sym, tpeArgs)) => {
+          t.substituteTypes(sym.asType.typeParams, tpeArgs)
+        }
+        case _ => {
+          t
+        }
+      }
+    }
+
     def extractMethod(
       pickleType: WeakTypeTag[_],
       meth: MethodSymbol,
@@ -84,11 +98,11 @@ object Macros {
           case Some(defaultName) => q"scala.util.Right(($target).${newTermName(defaultName)})"
           case None => q"scala.util.Left(autowire.Error.Param.Missing(${arg.name.toString}))"
         }
-        q"""autowire.Internal.read[$pickleType, ${arg.typeSignature}](
+        q"""autowire.Internal.read[$pickleType, ${doSubst(curCls, arg.typeSignature)}](
                  $argName,
                  $default,
                  ${arg.name.toString},
-                 ${c.prefix}.read[${arg.typeSignature}](_)
+                 ${c.prefix}.read[${doSubst(curCls, arg.typeSignature)}](_)
                )
              """
       }
@@ -102,7 +116,7 @@ object Macros {
 
       val nameNames: Seq[TermName] = flattenedArgLists.map(x => x.name.toTermName)
       val assignment = flattenedArgLists.foldLeft[Tree](q"Nil") { (old, next) =>
-        pq"scala.::(${next.name.toTermName}: ${next.typeSignature} @unchecked, $old)"
+        pq"scala.::(${next.name.toTermName}: ${doSubst(curCls, next.typeSignature)} @unchecked, $old)"
       }
 
 
@@ -134,7 +148,7 @@ object Macros {
       getValsOrMeths(curCls).flatMap {
         case Left((m, t)) => Nil
           //Vals / Vars
-          getAllRoutesForClass(pt, target, m.typeSignature, prefixPath, memPath :+ m.name.toString)
+          getAllRoutesForClass(pt, target, doSubst(curCls, m.typeSignature), prefixPath, memPath :+ m.name.toString)
         case Right((m, t)) =>
           //Methods
           Seq(extractMethod(pt, t, prefixPath, memPath :+ m.name.toString, target, curCls))
